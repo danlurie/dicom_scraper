@@ -17,24 +17,37 @@ def get_dcm_info(scan_dir, temp_path):
     csa_dict = {'n_slices':[0x19, 0x100a],'field_of_view':[0x51, 0x100c]}
     # Get a list of image files in the scan directory.
     img_list = os.listdir(scan_dir)
-    # If there are image files in the scan directory...
+    # Initialize a dictionary with n_volumes as the first value.
+    info_dict = {'n_volumes':len(img_list)}
+    # If there are image files in the scan directory... 
     if len(img_list) > 0:
-        # Initialize a dictionary with n_volumes as the first value.
-        info_dict = {'n_volumes':len(img_list)}
         # Get the path to the first file in the image list.
         file_path= '/'.join([scan_dir, img_list[0]])
-        # Unzip the compressed DICOM to the temporary image path.
-        os.system('gunzip -c {} > {}'.format(file_path, temp_path))
+        # Gracefully handle compressed DICOM files.
+        if file_path.endswith('dcm.gz'):
+            read_from_temp = True
+            # Unzip the compressed DICOM to the temporary image path.
+            os.system('gunzip -c {} > {}'.format(file_path, temp_path))
+        else:
+            read_from_temp = False
+        # Try to read the DICOM.
         try:
-            dcm_data = dicom.read_file(temp_path)
+            if read_from_temp == True:
+                dcm_data = dicom.read_file(temp_path)
+            else:
+                dcm_data = dicom.read_file(file_path)
+        # If unable to read the DICOM...
         except:
+            # Print an error message.
             print('......unable to load DICOM, continuing to next scan.')
+            # Fill dictionary values.
             for k in params_dict.keys():
-                info_dict[k] = 'Not Found'
+                info_dict[k] = 'DICOM could not be loaded'
             for k in csa_dict.keys():
-                info_dict[k] = 'Not Found'
-            os.system('rm {}'.format(temp_path))
+                info_dict[k] = 'DICOM could not be loaded'
+            # Return the dictionary.
             return info_dict
+        # If DICOM is loaded successfully...
         else:
             # Try to get information from standard DICOM headers.
             for k, v in params_dict.iteritems():
@@ -48,8 +61,20 @@ def get_dcm_info(scan_dir, temp_path):
                     info_dict[k] = dcm_data[hex(csa_dict[k][0]), hex(csa_dict[k][1])].value
                 except:
                     info_dict[k] = 'Not Found'
-            os.system('rm {}'.format(temp_path))
             return info_dict
+        finally:
+            if read_from_temp == True:
+                # Delete the temporary uncompressed file.
+                os.system('rm {}'.format(temp_path))
+    # If there are no images in the scan directory...
+    else:
+        # Fill dictionary values.
+        for k in params_dict.keys():
+            info_dict[k] = 'No Images Found'
+        for k in csa_dict.keys():
+            info_dict[k] = 'No Images Found'
+        # Return the dictionary.
+        return info_dict
 
 list_path, data_dir, tmp_path, out_path = sys.argv[1:]
 
